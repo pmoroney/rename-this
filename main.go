@@ -27,6 +27,16 @@ func (w walker) Visit(node ast.Node) ast.Visitor {
 }
 
 func newName(name string) string {
+	allUpper := true
+	for _, r := range name {
+		if !unicode.IsUpper(r) {
+			allUpper = false
+			break
+		}
+	}
+	if allUpper {
+		return strings.ToLower(name)
+	}
 	allLower := true
 	for _, r := range name {
 		if !unicode.IsLower(r) {
@@ -43,37 +53,39 @@ func newName(name string) string {
 
 	// Split camelCase at any lower->upper transition, and split on underscores.
 	// Check each word for common initialisms.
-	newName := []rune{}
 	runes := []rune(name)
-	w, i := 0, 0 // index of start of word, scan
+	plural := false
+	if runes[len(runes)-1] == 's' {
+		plural = true
+		runes = runes[:len(runes)-1]
+	}
+	newName := []rune{runes[0]}
+	i := 1 // index of start of word, scan
 	for i+1 <= len(runes) {
-		eow := false // whether we hit the end of a word
-		if i+1 == len(runes) {
-			eow = true
-		} else if unicode.IsLower(runes[i]) && !unicode.IsLower(runes[i+1]) {
-			// lower->non-lower
-			eow = true
-		}
-		i++
-		if !eow {
-			continue
+		if !unicode.IsLower(runes[i]) {
+			newName = append(newName, runes[i])
 		}
 
-		// [w,i) is a word.
-		newName = append(newName, runes[w])
-		w = i
+		i++
+	}
+	if plural {
+		newName = append(newName, 's')
 	}
 	return strings.ToLower(string(newName))
 }
 
-func fixDir(dir string) error {
+func fixDir(dir string) (bool, error) {
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, nil, 0)
 	if err != nil {
-		return err
+		return false, err
 	}
+	success := false
 	for _, node := range pkgs {
 		ast.Walk(walker(func(n ast.Node) bool {
+			if success {
+				return false
+			}
 			fn, ok := n.(*ast.FuncDecl)
 			if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
 				return true
@@ -99,17 +111,20 @@ func fixDir(dir string) error {
 					return true
 				}
 				new := newName(ident.Name)
+				log.Printf("Renaming %#v for %s to %s", position, ident.Name, new)
 				err := rename.Main(&build.Default, fileOffset, "", new)
 				if err == rename.ConflictError {
 					log.Printf("Conflict at %s renaming receiver for %s to %s", fileOffset, ident.Name, new)
 				} else if err != nil {
 					log.Print(err)
 				}
+				success = true
+				return false
 			}
 			return true
 		}), node)
 	}
-	return nil
+	return success, nil
 }
 
 func main() {
@@ -120,7 +135,13 @@ func main() {
 		if path == "." {
 			path = filepath.Clean(path)
 		}
-		fixDir(path)
+		success := true
+		for success {
+			success, err = fixDir(path)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 		return nil
 	})
 }

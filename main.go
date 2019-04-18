@@ -29,6 +29,7 @@ func (w walker) Visit(node ast.Node) ast.Visitor {
 func newName(name string) string {
 	overrides := map[string]string{
 		"Spotlight": "sl",
+		"YBCache":   "yc",
 	}
 	if ans, ok := overrides[name]; ok {
 		return ans

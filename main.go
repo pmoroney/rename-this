@@ -27,6 +27,12 @@ func (w walker) Visit(node ast.Node) ast.Visitor {
 }
 
 func newName(name string) string {
+	overrides := map[string]string{
+		"Spotlight": "sl",
+	}
+	if ans, ok := overrides[name]; ok {
+		return ans
+	}
 	allUpper := true
 	for _, r := range name {
 		if !unicode.IsUpper(r) {
@@ -114,7 +120,7 @@ func fixDir(dir string) (bool, error) {
 				log.Printf("Renaming %#v for %s to %s", position, ident.Name, new)
 				err := rename.Main(&build.Default, fileOffset, "", new)
 				if err == rename.ConflictError {
-					log.Printf("Conflict at %s renaming receiver for %s to %s", fileOffset, ident.Name, new)
+					log.Fatalf("Conflict at %s renaming receiver for %s to %s", fileOffset, ident.Name, new)
 				} else if err != nil {
 					log.Print(err)
 				}
